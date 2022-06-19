@@ -1,0 +1,48 @@
+[package]
+name = "gpu"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.dev]
+debug = 0
+overflow-checks = false
+
+[profile.release]
+opt-level = 3
+overflow-checks = false
+lto = "fat"
+debug = 0
+codegen-units = 1
+
+[profile.dev.package.wgpu]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+winit = "0.26"
+wgpu = "0.12"
+env_logger = "0.9"
+log = "0.4"
+pollster = "0.2"
+image = { version = "0.24", default-features = false, features = ["png"] }
+anyhow = "1"
+glam = { version = "0.20" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"
+console_log = "0.2"
+wgpu = { version = "0.12", features = ["webgl"]}
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = { version = "0.4" }
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+]}

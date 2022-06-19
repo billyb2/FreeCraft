@@ -1,0 +1,54 @@
+[config]
+# Skip loading of all core tasks which saves up a bit on toml parsing and task creation
+# skip_core_tasks = true
+# Skips loading Git related environment variables
+skip_git_env_info = true
+# Skips loading rust related environment variables
+# skip_rust_env_info = true
+# Skips loading the current crate related environment variables
+skip_crate_env_info = true
+
+[tasks.install-target-wasm32-unknown-unknown]
+args = ["target", "install", "wasm32-unknown-unknown"]
+command = "rustup"
+
+[tasks.basic-http-server]
+env = { RUSTFLAGS = "-Ctarget-cpu=native" }
+install_crate = {crate_name = "basic-http-server", binary = "basic-http-server", test_arg="--help"}
+
+[tasks.build-web-debug]
+env = { RUSTFLAGS = "" }
+args = ["build", "--target", "wasm32-unknown-unknown", "--target-dir=target_web/", "--bin", "game_fps", "--no-default-features", "--features=web" ]
+command = "cargo"
+dependencies = ["install-target-wasm32-unknown-unknown"]
+
+[tasks.build-web-release]
+env = { RUSTFLAGS = "" }
+args = ["build", "--target", "wasm32-unknown-unknown", "--target-dir=target_web/", "--bin", "game_fps", "--release", "--no-default-features", "--features=web"]
+command = "cargo"
+dependencies = ["install-target-wasm32-unknown-unknown"]
+
+[tasks.bindgen-wasm-file-debug]
+args = ["--remove-name-section", "--remove-producers-section", "--out-dir", "target", "--out-name", "wasm", "--target", "web", "--no-typescript", "target_web/wasm32-unknown-unknown/debug/game_fps.wasm"]
+command = "wasm-bindgen"
+dependencies = ["build-web-debug"]
+
+[tasks.bindgen-wasm-file-release]
+args = ["--remove-name-section", "--remove-producers-section", "--out-dir", "target", "--out-name", "wasm", "--target", "web", "--no-typescript", "target_web/wasm32-unknown-unknown/release/game_fps.wasm"]
+command = "wasm-bindgen"
+dependencies = ["build-web-release"]
+
+[tasks.build-android]
+args = ["apk", "build", "--target-dir=target_android/", "--lib"]
+command = "cargo"
+
+[tasks.serve]
+args = ["-a", "127.0.0.1:4000"]
+command = "basic-http-server"
+dependencies = ["basic-http-server", "bindgen-wasm-file-debug"]
+
+[tasks.serve-release]
+args = ["-a", "127.0.0.1:4000"]
+command = "basic-http-server"
+dependencies = ["basic-http-server", "bindgen-wasm-file-release"]
+
