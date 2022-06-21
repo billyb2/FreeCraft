@@ -9,8 +9,62 @@ use winit::{
 #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
 
-use glam::Vec3;
+use glam::{Vec3A, Mat4};
 
+use once_cell::sync::Lazy;
+
+#[rustfmt::skip]
+pub static OPENGL_TO_WGPU_MATRIX: Lazy<Mat4> = Lazy::new(|| Mat4::from_cols_array(
+    &[1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,]
+));
+
+struct Camera {
+    eye: Vec3A,
+    target: Vec3A,
+    up: Vec3A,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
+
+}
+
+impl Camera {
+    fn build_view_projection_matrix(&self) -> Mat4 {
+        // Moves world to be at pos and rot of cam
+        let view = Mat4::look_at_rh(self.eye.into(), self.target.into(), self.up.into());
+        // Creates a depth effect
+        let proj = Mat4::perspective_rh_gl(self.fovy, self.aspect, self.znear, self.zfar);
+
+        *OPENGL_TO_WGPU_MATRIX * proj * view
+
+    }
+
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniform {
+    // We can't use cgmath with bytemuck directly so we'll have
+    // to convert the Matrix4 into a 4x4 f32 array
+    view_proj: [[f32; 4]; 4],
+}
+
+impl CameraUniform {
+    fn new() -> Self {
+        Self {
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+        }
+    }
+
+    fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
+
+    }
+}
 
 struct AppState {
     direction: f32,
@@ -29,13 +83,12 @@ impl AppState {
             vertex_buffer: [
                 Vertex { position: [0.0, 0.5, 0.0], tex_coords: [0.0, 0.0], }, // Top left
                 Vertex { position: [0.0, 0.0, 0.0], tex_coords: [0.0, 1.0], }, // Bottom left 
-                Vertex { position: [0.5 * (600.0/800.0), 0.0, 0.0], tex_coords: [1.0, 1.0], }, // Bottom right 
-                Vertex { position: [0.5 * (600.0/800.0), 0.5, 0.0], tex_coords: [1.0, 0.0], }, // Top right 
+                Vertex { position: [0.5, 0.0, 0.0], tex_coords: [1.0, 1.0], }, // Bottom right 
+                Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 0.0], }, // Top right 
             ],
             indices: [
                 0, 1, 2,
                 3, 0, 2,
-                //2, 3, 1,
             ],
 
         }
@@ -43,57 +96,7 @@ impl AppState {
 
     fn update(&mut self) {
         //TODO shitty name
-        /*for (vertex_int, vertex) in self.vertex_buffer.iter_mut().enumerate(){
-            if vertex.color[0] > 0.0 {
-                vertex.color[1] = 0.0;
-                vertex.color[2] = 0.0;
 
-                vertex.color[0] += 0.01;
-
-                if vertex.color[0] >= 1.0 {
-                    vertex.color[0] = 0.0;
-                    vertex.color[1] = 0.01;
-
-                }
-
-            } else if vertex.color[1] > 0.0 {
-                vertex.color[2] = 0.0;
-                vertex.color[0] = 0.0;
-
-                vertex.color[1] += 0.01;
-
-                if vertex.color[1] >= 1.0 {
-                    vertex.color[1] = 0.0;
-                    vertex.color[2] = 0.01;
-
-                }
-
-            } else if vertex.color[2] > 0.0 {
-                vertex.color[0] = 0.0;
-                vertex.color[1] = 0.0;
-
-                vertex.color[2] += 0.01;
-
-                if vertex.color[2] >= 1.0 {
-                    vertex.color[2] = 0.0;
-                    vertex.color[0] = 0.01;
-
-                }
-
-            }
-
-
-            vertex.position[0] += self.direction;
-
-        }
-
-
-        let vertex = &self.vertex_buffer[0];
-        if (vertex.position[0] > 1.0 && self.direction > 0.0) || (vertex.position[0] < -1.0 && self.direction < 0.0) {
-            self.direction = -self.direction;
-
-        }
-*/
     }
 
 }
@@ -127,6 +130,7 @@ impl Vertex {
 }
 
 struct RendererState {
+    camera: Camera,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -137,6 +141,9 @@ struct RendererState {
     index_buffer: wgpu::Buffer,
     diffuse_bind_group: wgpu::BindGroup,
     diffuse_texture: texture::Texture,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl RendererState {
@@ -226,6 +233,62 @@ impl RendererState {
             }
         );
 
+        let camera = Camera {
+            // position the camera one unit up and 2 units back
+            // +z is out of the screen
+            eye: (0.0, 1.0, 2.0).into(),
+            // have it look at the origin
+            target: (0.0, 0.0, 0.0).into(),
+            // which way is "up"
+            up: Vec3A::Y,
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        // We add camera information to a uniform buffer to render it properly in the vertex shader
+        let camera_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[camera_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("camera_bind_group_layout"),
+        });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("camera_bind_group"),
+        });
+
+
+
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
@@ -234,7 +297,7 @@ impl RendererState {
         
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout],
+            bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
             push_constant_ranges: &[],
         });
         
@@ -298,6 +361,7 @@ impl RendererState {
         );
 
         Self {
+            camera,
             surface,
             device,
             queue,
@@ -308,6 +372,9 @@ impl RendererState {
             index_buffer,
             diffuse_bind_group,
             diffuse_texture,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
         }
 
     }
@@ -353,10 +420,9 @@ impl RendererState {
                 depth_stencil_attachment: None,
             });
 
-
-            // NEW!
             render_pass.set_pipeline(&self.render_pipeline); // 2.
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             //render_pass.draw(0..3, 0..1);
@@ -364,7 +430,24 @@ impl RendererState {
             
         }
 
-        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&app_state.vertex_buffer));
+        // Update the camera 
+        { 
+            let forward = self.camera.target - self.camera.eye;
+            let forward_norm = forward.normalize();
+
+            // Move backward 
+            self.camera.eye -= forward_norm * 0.01;
+
+            let right = forward_norm.cross(self.camera.up);
+            let forward = self.camera.target - self.camera.eye;
+
+            // Move right 
+            //self.camera.eye = self.camera.target - (forward + right * 0.01).normalize();
+
+            self.camera_uniform.update_view_proj(&self.camera);
+        }
+
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
         self.queue.submit(std::iter::once(encoder.finish()));
 
         output.present();
