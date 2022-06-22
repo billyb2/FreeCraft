@@ -27,9 +27,6 @@ fn vs_main(
     return out;
 }
 
- 
-
- 
 // Fragment shader
 
 [[group(0), binding(0)]]

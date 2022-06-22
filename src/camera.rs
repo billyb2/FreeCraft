@@ -26,10 +26,10 @@ impl Camera {
     
     pub fn new() -> Self {
         Self {
-            pos: (0.0, 1.0, 2.0).into(),
+            pos: (800.0, 801.0, 52.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up_axis: Vec3A::Y,
-            aspect: 100.0 / 600.0,
+            aspect: 1.0,
             fovy: 45.0,
             znear: 0.1,
             zfar: 100.0,
@@ -44,7 +44,7 @@ impl Camera {
 
     pub fn move_forward(&mut self, speed: f32) {
         let forward = self.target - self.pos;
-        let forward_norm = forward.normalize();
+        let forward_norm = forward.normalize_or_zero();
         // Equivalent of cgmath magnitude
 
         self.pos += forward_norm * speed;
@@ -62,12 +62,13 @@ impl Camera {
 
     pub fn move_right(&mut self, speed: f32) {
         let forward = self.target - self.pos;
-        let forward_norm = forward.normalize();
+        let forward_norm = forward.normalize_or_zero();
         let forward_mag = forward.dot(forward).sqrt(); 
 
         let right = forward_norm.cross(self.up_axis);
 
-        self.pos = self.target - (forward + right * speed).normalize() * forward_mag;
+        //self.pos = self.target - (forward - right * speed).normalize() * forward_mag;
+        self.pos.z -= speed;
     }
 
     pub fn move_left(&mut self, speed: f32) {
@@ -77,7 +78,7 @@ impl Camera {
 
         let right = forward_norm.cross(self.up_axis);
 
-        self.pos = self.target - (forward - right * speed).normalize() * forward_mag;
+        self.pos = self.target - (forward + right * speed).normalize() * forward_mag;
     }
     
     pub fn move_up(&mut self, speed: f32) {
