@@ -1,4 +1,4 @@
-use glam::{Vec3A, Mat4};
+use glam::{Vec3, Vec3A, Mat4};
 use wgpu::SurfaceConfiguration;
 
 pub struct Camera {
@@ -88,6 +88,11 @@ impl Camera {
 
     pub fn move_down(&mut self, speed: f32) {
         self.pos.y += speed;
+
+    }
+    
+    pub fn pos(&self) -> Vec3 {
+        self.pos.into()
 
     }
 

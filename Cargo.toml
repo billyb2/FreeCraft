@@ -1,5 +1,5 @@
 [package]
-name = "gpu"
+name = "freecraft"
 version = "0.1.0"
 edition = "2021"
 
@@ -17,7 +17,7 @@ lto = "fat"
 debug = 0
 codegen-units = 1
 
-[profile.dev.package.gpu]
+[profile.dev.package.freecraft]
 opt-level = 0
 
 [profile.dev.package."*"]

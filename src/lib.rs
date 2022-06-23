@@ -1,8 +1,10 @@
 mod texture;
 mod camera;
+mod block;
 
 use camera::{Camera, CameraUniform};
-use glam::{Vec3, Vec3A};
+use block::*;
+use glam::Vec3;
 use wgpu::{util::DeviceExt, Buffer, SurfaceConfiguration};
 use winit::{
     event::*,
@@ -12,110 +14,8 @@ use winit::{
 #[cfg(target_arch="wasm32")]
 use wasm_bindgen::prelude::*;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: Vec3,
-    tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    const fn zero() -> Self {
-        Self {
-            position: Vec3::ZERO,
-            tex_coords: [0.0; 2],
-        }
-    }
-
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                }
-            ]
-        }
-    }
-}
-
-struct Block {
-    pos: Vec3,
-
-}
-
-impl Block {
-    fn new() -> Self {
-        Self {
-            pos: Vec3::new(800.0, 800.0, 50.0),
-
-        }
-
-    }
-
-    fn to_vertices(&self) -> [Vertex; 24] {
-        [
-            // Top face
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, 1.0]), tex_coords: [1.0, 1.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, 1.0]), tex_coords: [1.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, 1.0]), tex_coords: [0.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, 1.0]), tex_coords: [0.0, 1.0] },
-            // Bottom face
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, -1.0]), tex_coords: [1.0, 1.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, -1.0]), tex_coords: [1.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, -1.0]), tex_coords: [0.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, -1.0]), tex_coords: [0.0, 1.0] },
-            // Right face
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, -1.0]), tex_coords: [1.0, 1.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, -1.0]), tex_coords: [1.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, 1.0]), tex_coords: [0.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, 1.0]), tex_coords: [0.0, 1.0] },
-            // Left face
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, 1.0]), tex_coords: [1.0, 1.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, 1.0]), tex_coords: [1.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, -1.0]), tex_coords: [0.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, -1.0]), tex_coords: [0.0, 1.0] },
-            // Front face
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, -1.0]), tex_coords: [0.0, 0.0], }, // Top left
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, -1.0]), tex_coords: [0.0, 1.0], }, // Bottom left 
-            Vertex { position: self.pos + Vec3::from_array([-1.0, 1.0, 1.0]), tex_coords: [1.0, 1.0], }, // Bottom right 
-            Vertex { position: self.pos + Vec3::from_array([1.0, 1.0, 1.0]), tex_coords: [1.0, 0.0], }, // Top right 
-            // Back face
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, 1.0]), tex_coords: [1.0, 1.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, 1.0]), tex_coords: [1.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([-1.0, -1.0, -1.0]), tex_coords: [0.0, 0.0] },
-            Vertex { position: self.pos + Vec3::from_array([1.0, -1.0, -1.0]), tex_coords: [0.0, 1.0] },
-        ]
-
-    }
-
-    fn to_indices(block_num: u16) -> [u16; 36] {
-        let block_start_index = block_num * 24;
-
-        [
-            block_start_index, 1 + block_start_index, 2 + block_start_index, 2 + block_start_index, 3 + block_start_index, block_start_index, // top
-            4 + block_start_index, 5 + block_start_index, 6 + block_start_index, 6 + block_start_index, 7 + block_start_index, 4 + block_start_index, // bottom
-            8 + block_start_index, 9 + block_start_index, 10 + block_start_index, 10 + block_start_index, 11 + block_start_index, 8 + block_start_index, // right
-            12 + block_start_index, 13 + block_start_index, 14 + block_start_index, 14 + block_start_index, 15 + block_start_index, 12 + block_start_index, // left
-            16 + block_start_index, 17 + block_start_index, 18 + block_start_index, 18 + block_start_index, 19 + block_start_index, 16 + block_start_index, // front
-            20 + block_start_index, 21 + block_start_index, 22 + block_start_index, 22 + block_start_index, 23 + block_start_index, 20 + block_start_index, // back           
-        ]
-    }
-
-}
-
 struct AppState {
-    blocks: [Block; 2], 
-    vertex_buffer: [Vertex; 24 * 2],
-    indices: [u16; 72],
+    chunk: Chunk,
     camera: Camera,
     moving_forward: bool,
     moving_backward: bool,
@@ -123,29 +23,15 @@ struct AppState {
     moving_right: bool,
     moving_up: bool,
     moving_down: bool,
-    //block_pos: Vec3,
 
 }
 
 impl AppState {
     fn new() -> Self {
-        let block1 = Block::new();
-        let mut block2 = Block::new();
-        block2.pos.z -= 2.0; 
-
-        let mut vertex_buffer = [Vertex::zero(); 24 * 2];
-        let mut indices = [0; 72];
-
-        vertex_buffer[0..24].copy_from_slice(&block1.to_vertices());
-        vertex_buffer[24..48].copy_from_slice(&block2.to_vertices());
-
-        indices[36..72].copy_from_slice(&Block::to_indices(0));
-        indices[0..36].copy_from_slice(&Block::to_indices(1));
+        let chunk = Chunk::new(Vec3::new(800.0, 800.0, 50.0));
         
         Self {
-            vertex_buffer,
-            blocks: [block1, block2],
-            indices,
+            chunk,
             moving_forward: false,
             moving_backward: false,
             moving_left: false,
@@ -190,8 +76,7 @@ impl AppState {
 
         }
 
-        //self.block.pos.z += 0.05;
-        //self.vertex_buffer = self.block.to_vertices();
+        self.chunk.update_graphics(self.camera.pos());
 
     }
 
@@ -437,7 +322,7 @@ impl RendererState {
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex buffer"),
-                contents: bytemuck::cast_slice(&app_state.vertex_buffer),
+                contents: bytemuck::cast_slice(app_state.chunk.vertices()),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 
             }
@@ -447,7 +332,7 @@ impl RendererState {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index buffer"),
-                contents: bytemuck::cast_slice(&app_state.indices),
+                contents: bytemuck::cast_slice(app_state.chunk.indices()),
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 
             }
@@ -534,12 +419,12 @@ impl RendererState {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..(app_state.indices.len().try_into().unwrap()), 0, 0..1);
+            render_pass.draw_indexed(0..(app_state.chunk.indices().len().try_into().unwrap()), 0, 0..1);
             
         }
 
         // Update the vertex buffer
-        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&app_state.vertex_buffer));
+        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(app_state.chunk.vertices()));
         // Update the camera position
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(self.camera_uniform.view_proj()));
         self.queue.submit(std::iter::once(encoder.finish()));

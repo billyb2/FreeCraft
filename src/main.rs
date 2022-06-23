@@ -1,3 +1,3 @@
 fn main() {
-    pollster::block_on(gpu::main());
+    pollster::block_on(freecraft::main());
 }
