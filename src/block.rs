@@ -44,13 +44,15 @@ const INDICES_PER_BLOCK: usize = 36;
 // Block locations are stored by their position within a chunk
 #[derive(Clone, Copy)]
 struct Block {
+    solid: bool,
     block_num: u16,
 
 }
 
 impl Block {
-    const fn new(block_num: u16) -> Self {
+    const fn new(block_num: u16, solid: bool) -> Self {
         Self { 
+            solid,
             block_num,
 
         }
@@ -148,7 +150,14 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new(chunk_pos: Vec3) -> Self {
-        let blocks = [Block::new(0); CHUNK_SIZE];
+        let mut blocks = [Block::new(0, false); CHUNK_SIZE];
+
+        for block in blocks.iter_mut() {
+            if fastrand::u8(0..255) > 200 {
+                block.solid = true;
+            }
+
+        }
         
         let mut old_self = Self {
             chunk_pos,
@@ -158,6 +167,7 @@ impl Chunk {
 
         };
         
+        old_self.update_block_nums();
         old_self.update_vertices(Vec3::ZERO);
         old_self.update_indices();
 
@@ -166,7 +176,7 @@ impl Chunk {
     }
 
     pub fn update_graphics(&mut self, camera_pos: Vec3) {
-        self.update_block_nums();
+        //self.update_block_nums();
         self.sort_blocks(camera_pos);
         self.update_vertices(camera_pos);
         self.update_indices();
@@ -207,18 +217,20 @@ impl Chunk {
         self.vertices.clear();
 
         for block in self.blocks.iter() {
-            // The block's position relative to the chunk center
-            let block_rel_pos = Block::calc_rel_pos(block.block_num); 
-            let block_world_pos = self.chunk_pos + block_rel_pos;
-
             let mut current_block_vertices = [Vertex::zero(); VERTICES_PER_BLOCK];
 
-            current_block_vertices[8..12].copy_from_slice(&block.as_vertices_right(block_world_pos));
-            current_block_vertices[12..16].copy_from_slice(&block.as_vertices_left(block_world_pos));
-            current_block_vertices[16..20].copy_from_slice(&block.as_vertices_front(block_world_pos));
-            current_block_vertices[20..24].copy_from_slice(&block.as_vertices_back(block_world_pos));
-            current_block_vertices[4..8].copy_from_slice(&block.as_vertices_bottom(block_world_pos));
-            current_block_vertices[0..4].copy_from_slice(&block.as_vertices_top(block_world_pos));
+            if block.solid {
+                // The block's position relative to the chunk center
+                let block_rel_pos = Block::calc_rel_pos(block.block_num); 
+                let block_world_pos = self.chunk_pos + block_rel_pos;
+
+                current_block_vertices[8..12].copy_from_slice(&block.as_vertices_right(block_world_pos));
+                current_block_vertices[12..16].copy_from_slice(&block.as_vertices_left(block_world_pos));
+                current_block_vertices[16..20].copy_from_slice(&block.as_vertices_front(block_world_pos));
+                current_block_vertices[20..24].copy_from_slice(&block.as_vertices_back(block_world_pos));
+                current_block_vertices[4..8].copy_from_slice(&block.as_vertices_bottom(block_world_pos));
+                current_block_vertices[0..4].copy_from_slice(&block.as_vertices_top(block_world_pos));
+            }
 
             self.vertices.extend_from_slice(&current_block_vertices);
 
