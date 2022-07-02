@@ -163,7 +163,7 @@ impl RendererState {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_preferred_format(&adapter).unwrap(),
+            format: surface.get_supported_formats(&adapter)[0],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
@@ -258,7 +258,7 @@ impl RendererState {
              
 
  
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
 
@@ -270,11 +270,11 @@ impl RendererState {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline_targets = [wgpu::ColorTargetState { // 4.
+        let render_pipeline_targets = [Some(wgpu::ColorTargetState { // 4.
             format: config.format,
             blend: Some(wgpu::BlendState::REPLACE),
             write_mask: wgpu::ColorWrites::ALL,
-        }];
+        })];
 
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -388,7 +388,7 @@ impl RendererState {
                 label: Some("Render Pass"),
                 color_attachments: &[
                     // This is what [[location(0)]] in the fragment shader targets
-                    wgpu::RenderPassColorAttachment {
+                    Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
@@ -402,7 +402,7 @@ impl RendererState {
                             ),
                             store: true,
                         }
-                    }
+                    })
                 ],
                 depth_stencil_attachment: None,
             });
