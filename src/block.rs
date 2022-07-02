@@ -41,6 +41,12 @@ const BLOCK_SIZE: f32 = 2.0;
 const VERTICES_PER_BLOCK: usize = 24;
 const INDICES_PER_BLOCK: usize = 36;
 
+struct BlockNeighbors {
+    z_pos: Option<u16>,
+    z_neg: Option<u16>,
+
+}
+
 // Block locations are stored by their position within a chunk
 #[derive(Clone, Copy)]
 struct Block {
@@ -59,7 +65,7 @@ impl Block {
 
     }
 
-    fn as_vertices_top(&self, block_pos: Vec3) -> [Vertex; 4] {
+    fn as_vertices_z_pos(&self, block_pos: Vec3) -> [Vertex; 4] {
         [
             Vertex { position: block_pos + Vec3::from_array([-1.0, -1.0, 1.0]), tex_coords: [1.0, 1.0] },
             Vertex { position: block_pos + Vec3::from_array([1.0, -1.0, 1.0]), tex_coords: [1.0, 0.0] },
@@ -68,7 +74,7 @@ impl Block {
         ]
     }
 
-    fn as_vertices_bottom(&self, block_pos: Vec3) -> [Vertex; 4] {
+    fn as_vertices_z_neg(&self, block_pos: Vec3) -> [Vertex; 4] {
         [
             Vertex { position: block_pos + Vec3::from_array([-1.0, 1.0, -1.0]), tex_coords: [1.0, 1.0] },
             Vertex { position: block_pos + Vec3::from_array([1.0, 1.0, -1.0]), tex_coords: [1.0, 0.0] },
@@ -134,10 +140,21 @@ impl Block {
         Vec3::new(x, y, z) * Vec3::splat(2.0)
     }
 
+    fn get_neighbor_indexes(&self) -> BlockNeighbors {
+        let z_pos = self.block_num.checked_add(CHUNK_SIZE_AXIS.pow(2).try_into().unwrap());
+        let z_neg = self.block_num.checked_sub(CHUNK_SIZE_AXIS.pow(2).try_into().unwrap());
+
+        BlockNeighbors {
+            z_pos,
+            z_neg,
+        }
+
+    }
+
 }
 
 // The length a chunk goes on a single axis
-const CHUNK_SIZE_AXIS: usize = 8;
+const CHUNK_SIZE_AXIS: usize = 3;
 pub const CHUNK_SIZE: usize = CHUNK_SIZE_AXIS.pow(3);
 
 pub struct Chunk {
@@ -150,11 +167,11 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new(chunk_pos: Vec3) -> Self {
-        let mut blocks = [Block::new(0, false); CHUNK_SIZE];
+        let mut blocks = [Block::new(0, true); CHUNK_SIZE];
 
         for block in blocks.iter_mut() {
             if fastrand::u8(0..255) > 200 {
-                block.solid = true;
+                //block.solid = true;
             }
 
         }
@@ -176,7 +193,6 @@ impl Chunk {
     }
 
     pub fn update_graphics(&mut self, camera_pos: Vec3) {
-        //self.update_block_nums();
         self.sort_blocks(camera_pos);
         self.update_vertices(camera_pos);
         self.update_indices();
@@ -224,12 +240,38 @@ impl Chunk {
                 let block_rel_pos = Block::calc_rel_pos(block.block_num); 
                 let block_world_pos = self.chunk_pos + block_rel_pos;
 
+                let block_neighbors = block.get_neighbor_indexes();
+
+                let mut draw_face = |block_face_vertices: &mut [Vertex; 4], neighbor_block_index: Option<u16>, calced_block_vertices: [Vertex; 4]| {
+                    block_face_vertices.copy_from_slice(&
+                    match neighbor_block_index {
+                        Some(neighbor_block_index) => {
+                            let neighbor_block_index: usize = neighbor_block_index.into();
+                            let neighbor_block = self.blocks.get(neighbor_block_index);
+
+                            match neighbor_block {
+                                Some(neighbor_block) => {
+                                    match neighbor_block.solid {
+                                        true => [Vertex::zero(); 4],
+                                        false => calced_block_vertices,
+
+                                    }
+                                },
+                                None => calced_block_vertices,
+                            }
+                        },
+                        None => calced_block_vertices,
+
+                    });
+                };
+
                 current_block_vertices[8..12].copy_from_slice(&block.as_vertices_right(block_world_pos));
                 current_block_vertices[12..16].copy_from_slice(&block.as_vertices_left(block_world_pos));
-                current_block_vertices[16..20].copy_from_slice(&block.as_vertices_front(block_world_pos));
+                current_block_vertices[16..20].copy_from_slice(&block.as_vertices_front(block_world_pos)); 
                 current_block_vertices[20..24].copy_from_slice(&block.as_vertices_back(block_world_pos));
-                current_block_vertices[4..8].copy_from_slice(&block.as_vertices_bottom(block_world_pos));
-                current_block_vertices[0..4].copy_from_slice(&block.as_vertices_top(block_world_pos));
+                draw_face((&mut current_block_vertices[4..8]).try_into().unwrap(), block_neighbors.z_neg, block.as_vertices_z_neg(block_world_pos)); 
+                draw_face((&mut current_block_vertices[0..4]).try_into().unwrap(), block_neighbors.z_pos, block.as_vertices_z_pos(block_world_pos)); 
+
             }
 
             self.vertices.extend_from_slice(&current_block_vertices);
