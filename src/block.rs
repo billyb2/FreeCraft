@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Add};
 
 use glam::Vec3;
 
@@ -44,6 +44,12 @@ const INDICES_PER_BLOCK: usize = 36;
 struct BlockNeighbors {
     z_pos: Option<u16>,
     z_neg: Option<u16>,
+
+    y_pos: Option<u16>,
+    y_neg: Option<u16>,
+
+    x_pos: Option<u16>,
+    x_neg: Option<u16>,
 
 }
 
@@ -101,7 +107,7 @@ impl Block {
         ]
     }
 
-    fn as_vertices_front(&self, block_pos: Vec3) -> [Vertex; 4] {
+    fn as_verticecs_y_pos(&self, block_pos: Vec3) -> [Vertex; 4] {
         [
             Vertex { position: block_pos + Vec3::from_array([1.0, 1.0, -1.0]), tex_coords: [0.0, 0.0], }, // Top left
             Vertex { position: block_pos + Vec3::from_array([-1.0, 1.0, -1.0]), tex_coords: [0.0, 1.0], }, // Bottom left 
@@ -110,7 +116,7 @@ impl Block {
         ] 
     }
 
-    fn as_vertices_back(&self, block_pos: Vec3) -> [Vertex; 4] {
+    fn as_vertices_y_neg(&self, block_pos: Vec3) -> [Vertex; 4] {
         [
             Vertex { position: block_pos + Vec3::from_array([1.0, -1.0, 1.0]), tex_coords: [1.0, 1.0] },
             Vertex { position: block_pos + Vec3::from_array([-1.0, -1.0, 1.0]), tex_coords: [1.0, 0.0] },
@@ -141,12 +147,46 @@ impl Block {
     }
 
     fn get_neighbor_indexes(&self) -> BlockNeighbors {
+        let self_pos = Block::calc_rel_pos(self.block_num);
+
         let z_pos = self.block_num.checked_add(CHUNK_SIZE_AXIS.pow(2).try_into().unwrap());
         let z_neg = self.block_num.checked_sub(CHUNK_SIZE_AXIS.pow(2).try_into().unwrap());
+
+        let mut y_pos = self.block_num.checked_add(CHUNK_SIZE_AXIS.try_into().unwrap());
+        let mut y_neg = self.block_num.checked_sub(CHUNK_SIZE_AXIS.try_into().unwrap());
+
+        let y_pos_x = y_pos.map(|y_pos| Block::calc_rel_pos(y_pos).x);
+        let y_neg_x = y_neg.map(|y_neg| Block::calc_rel_pos(y_neg).x);
+
+        if let Some(y_pos_x) = y_pos_x {
+            // Only count the y_pos neighbor if the x coord is the same as the current block
+            if y_pos_x != self_pos.x || Block::calc_rel_pos(y_pos.unwrap()).y - self_pos.y != 2.0 {
+                y_pos = None;
+
+            }
+
+        }
+
+        if let Some(y_neg_x) = y_neg_x {
+            if y_neg_x != self_pos.x || self_pos.y - Block::calc_rel_pos(y_neg.unwrap()).y != 2.0 {
+                y_neg = None;
+
+           }
+
+        }
+
+        let x_pos = self.block_num.checked_add(1);
+        let x_neg = self.block_num.checked_sub(1);
 
         BlockNeighbors {
             z_pos,
             z_neg,
+
+            y_pos,
+            y_neg,
+
+            x_pos,
+            x_neg,
         }
 
     }
@@ -242,7 +282,7 @@ impl Chunk {
 
                 let block_neighbors = block.get_neighbor_indexes();
 
-                let mut draw_face = |block_face_vertices: &mut [Vertex; 4], neighbor_block_index: Option<u16>, calced_block_vertices: [Vertex; 4]| {
+                let draw_face = |block_face_vertices: &mut [Vertex; 4], neighbor_block_index: Option<u16>, calced_block_vertices: [Vertex; 4]| {
                     block_face_vertices.copy_from_slice(&
                     match neighbor_block_index {
                         Some(neighbor_block_index) => {
@@ -267,8 +307,12 @@ impl Chunk {
 
                 current_block_vertices[8..12].copy_from_slice(&block.as_vertices_right(block_world_pos));
                 current_block_vertices[12..16].copy_from_slice(&block.as_vertices_left(block_world_pos));
-                current_block_vertices[16..20].copy_from_slice(&block.as_vertices_front(block_world_pos)); 
-                current_block_vertices[20..24].copy_from_slice(&block.as_vertices_back(block_world_pos));
+                //draw_face((&mut current_block_vertices[8..12]).try_into().unwrap(), block_neighbors.x_neg, block.as_vertices_right(block_world_pos));
+                //draw_face((&mut current_block_vertices[12..16]).try_into().unwrap(), block_neighbors.x_pos, block.as_vertices_left(block_world_pos));
+
+                draw_face((&mut current_block_vertices[16..20]).try_into().unwrap(), block_neighbors.y_pos, block.as_verticecs_y_pos(block_world_pos));
+                draw_face((&mut current_block_vertices[20..24]).try_into().unwrap(), block_neighbors.y_neg, block.as_vertices_y_neg(block_world_pos));
+
                 draw_face((&mut current_block_vertices[4..8]).try_into().unwrap(), block_neighbors.z_neg, block.as_vertices_z_neg(block_world_pos)); 
                 draw_face((&mut current_block_vertices[0..4]).try_into().unwrap(), block_neighbors.z_pos, block.as_vertices_z_pos(block_world_pos)); 
 
